@@ -61,6 +61,9 @@ trainer:
     # The machine learning model
     model_name: lenet5
 
+    # Whether to use catalyst training API
+    use_catalyst: true
+
 algorithm:
     # Aggregation algorithm
     type: fedavg

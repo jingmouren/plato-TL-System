@@ -161,3 +161,9 @@ class Config:
         ).trainer.parallelized and torch.cuda.is_available(
         ) and torch.distributed.is_available(
         ) and torch.cuda.device_count() > 1
+
+    @staticmethod
+    def is_using_catalyst():
+        """Returns whether it should use catalyst to train."""
+        return hasattr(Config().trainer,
+                       'use_catalyst') and Config().trainer.use_catalyst

@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.multiprocessing as mp
+from catalyst import dl
 import wandb
 
 import models.registry as models_registry
@@ -326,3 +327,78 @@ class Trainer(base.Trainer):
     def customize_optimizer_setup(self, optimizer):
         """Setting up the optimizer if necessary"""
         return optimizer
+
+    def catalyst_process(self, trainset, testset):
+        """The main training and testing(optional) loop 
+        in a federated learning workload, using catalyst custom method
+
+        Arguments:
+        trainset: The training dataset.
+        testset: The testing dataset.
+        """
+        config = Config().trainer._asdict()
+        epochs = config['epochs']
+        batch_size = config['batch_size']
+
+        # Initializing the loss criterion
+        _loss_criterion = getattr(self, "loss_criterion", None)
+        if callable(_loss_criterion):
+            loss_criterion = _loss_criterion(self.model)
+        else:
+            loss_criterion = nn.CrossEntropyLoss()  
+        
+        # Initializing the optimizer
+        get_optimizer = getattr(self, "get_optimizer",
+                                optimizers.get_optimizer)
+        optimizer = get_optimizer(self.model)
+
+        # Initializeing runner
+        runner = dl.SupervisedRunner()
+
+        # Initializeing the data loaders and start training,
+        # performing model testing if applicable
+        if Config().clients.do_test:
+            loaders = {
+                "train": torch.utils.data.DataLoader(
+                    dataset=trainset,
+                    batch_size=batch_size
+                ),
+                "valid": torch.utils.data.DataLoader(
+                    dataset=testset,
+                    batch_size=batch_size
+                ),
+            }
+        else:
+            loaders = {
+                "train": torch.utils.data.DataLoader(
+                    dataset=trainset,
+                    batch_size=batch_size
+                ),
+            }
+
+        # model training
+        runner.train(
+            model=self.model,
+            criterion=loss_criterion,
+            optimizer=optimizer,
+            loaders=loaders,
+            num_epochs=epochs,
+            callbacks=[
+                dl.AccuracyCallback(input_key="logits",
+                                    target_key="targets", topk_args=(1, 3, 5)
+                ),
+            ],
+            valid_loader="valid",
+            valid_metric="loss",
+            minimize_valid_metric=True,
+            verbose=True,
+        )
+
+        if Config().clients.do_test:
+            accuracy = runner.epoch_metrics["valid"]["accuracy"]
+            logging.info("[Client #{:d}] Test accuracy: {:.2f}%".format(
+                self.client_id, 100 * accuracy))
+        else:
+            accuracy = 0
+
+        return accuracy

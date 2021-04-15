@@ -83,21 +83,25 @@ class Client(base.Client):
         training_start_time = time.time()
         logging.info("[Client #%s] Started training.", self.client_id)
 
-        # Perform model training
-        self.trainer.train(self.trainset, self.sampler)
+        # Use catalyst train if applicable
+        if Config().is_using_catalyst():
+            accuracy = self.trainer.catalyst_process(self.trainset, self.testset)
+        else:
+            # Perform model training
+            self.trainer.train(self.trainset, self.sampler)
 
+            # Performing model testing if applicable
+            if Config().clients.do_test:
+                accuracy = self.trainer.test(self.testset)
+                logging.info("[Client #{:d}] Test accuracy: {:.2f}%".format(
+                    self.client_id, 100 * accuracy))
+            else:
+                accuracy = 0
+        
         # Extract model weights and biases
         weights = self.algorithm.extract_weights()
 
-        # Generate a report for the server, performing model testing if applicable
-        if Config().clients.do_test:
-            accuracy = self.trainer.test(self.testset)
-            logging.info("[Client #{:d}] Test accuracy: {:.2f}%".format(
-                self.client_id, 100 * accuracy))
-
-        else:
-            accuracy = 0
-
+        # Generate a report for the server
         training_time = time.time() - training_start_time
         data_loading_time = 0
 
